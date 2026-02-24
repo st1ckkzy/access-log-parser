@@ -13,7 +13,9 @@ public class Statistics {
     private LocalDateTime maxTime;
     private int entryCount;
     private Set<String> existingPages;
+    private Set<String> nonExistingPages;
     private Map<String, Integer> osCounts;
+    private Map<String, Integer> browserCounts;
 
     public Statistics() {
         this.totalTraffic = 0;
@@ -21,7 +23,9 @@ public class Statistics {
         this.maxTime = null;
         this.entryCount = 0;
         this.existingPages = new HashSet<>();
+        this.nonExistingPages = new HashSet<>();
         this.osCounts = new HashMap<>();
+        this.browserCounts = new HashMap<>();
     }
 
     public void addEntry(LogEntry entry) {
@@ -42,12 +46,23 @@ public class Statistics {
             existingPages.add(entry.getPath());
         }
 
+        if (entry.getResponseCode() == 404) {
+            nonExistingPages.add(entry.getPath());
+        }
+
         String os = entry.getUserAgent().getOsType();
         osCounts.put(os, osCounts.getOrDefault(os, 0) + 1);
+
+        String browser = entry.getUserAgent().getBrowser();
+        browserCounts.put(browser, browserCounts.getOrDefault(browser, 0) + 1);
     }
 
     public Set<String> getExistingPages() {
         return new HashSet<>(existingPages);
+    }
+
+    public Set<String> getNonExistingPages() {
+        return new HashSet<>(nonExistingPages);
     }
 
     public Map<String, Double> getOsStatistics() {
@@ -70,9 +85,32 @@ public class Statistics {
         return result;
     }
 
+    public Map<String, Double> getBrowserStatistics() {
+        Map<String, Double> result = new HashMap<>();
+
+        if (browserCounts.isEmpty()) {
+            return result;
+        }
+
+        int totalBrowserEntries = 0;
+        for (int count : browserCounts.values()) {
+            totalBrowserEntries += count;
+        }
+
+        for (Map.Entry<String, Integer> entry : browserCounts.entrySet()) {
+            double proportion = (double) entry.getValue() / totalBrowserEntries;
+            result.put(entry.getKey(), proportion);
+        }
+
+        return result;
+    }
 
     public Map<String, Integer> getOsRawStatistics() {
         return new HashMap<>(osCounts);
+    }
+
+    public Map<String, Integer> getBrowserRawStatistics() {
+        return new HashMap<>(browserCounts);
     }
 
     public double getTrafficRate() {
@@ -109,18 +147,33 @@ public class Statistics {
         return existingPages.size();
     }
 
+    public int getNonExistingPagesCount() {
+        return nonExistingPages.size();
+    }
 
     public boolean pageExists(String path) {
         return existingPages.contains(path);
     }
 
+    public boolean pageIsNonExisting(String path) {
+        return nonExistingPages.contains(path);
+    }
+
+    public void printResponseCodeStatistics() {
+        System.out.println("Существующие страницы (200): " + getExistingPagesCount());
+        System.out.println("Несуществующие страницы (404): " + getNonExistingPagesCount());
+
+        System.out.println("Всего уникальных страниц в логах: " + (existingPages.size() + nonExistingPages.size()));
+    }
+
     public void printStatistics() {
+        System.out.println("=== ОСНОВНАЯ СТАТИСТИКА ===");
         System.out.println("Всего записей: " + entryCount);
         long unsignedTotal = totalTraffic & 0xFFFFFFFFL;
 
         if (unsignedTotal != totalTraffic) {
-            System.out.println("Произошло переполнение int. Отображаемое значение: " + totalTraffic + " байт"); //По условиям задачи totalTraffic обязательно должен быть int. Для корректного подсчета используем long unsignedTotal
-            System.out.println("Корректное значение трафика: " + unsignedTotal + " байт");
+//            System.out.println("Произошло переполнение int. Отображаемое значение: " + totalTraffic + " байт"); //По условиям задачи totalTraffic обязательно должен быть int. Для корректного подсчета используем long unsignedTotal
+            System.out.println("Общий трафик: " + unsignedTotal + " байт");
         } else {
             System.out.println("Общий трафик: " + totalTraffic + " байт");
         }
@@ -130,16 +183,64 @@ public class Statistics {
             long hours = ChronoUnit.HOURS.between(minTime, maxTime);
             System.out.println("Продолжительность: " + hours + " часов");
             System.out.println("Средний трафик в час: " + String.format("%.2f", getTrafficRate()) + " байт/час");
-            System.out.println("Количество страниц с кодом 200: " + getExistingPagesCount());
+        }
 
-            Map<String, Double> osStats = getOsStatistics();
-            if (!osStats.isEmpty()) {
-                System.out.println("Доли использования ОС:");
-                for (Map.Entry<String, Double> entry : osStats.entrySet()) {
-                    System.out.printf("  %-10s: %.2f%% (%d запросов)%n", entry.getKey(), entry.getValue() * 100, osCounts.get(entry.getKey()));
+        printResponseCodeStatistics();
+
+        System.out.println("=== СУЩЕСТВУЮЩИЕ СТРАНИЦЫ ===");
+        if (!existingPages.isEmpty()) {
+            System.out.println("Первые 5 страниц (всего " + existingPages.size() + "):");
+            int count = 0;
+            for (String page : existingPages) {
+                if (count++ < 5) {
+                    System.out.println("  - " + page);
+                } else {
+                    break;
                 }
             }
-            System.out.println("=".repeat(50));
+            if (existingPages.size() > 5) {
+                System.out.println("  ... и еще " + (existingPages.size() - 5) + " страниц");
+            }
+        } else {
+            System.out.println("Нет страниц с кодом 200");
         }
+
+        System.out.println("=== НЕСУЩЕСТВУЮЩИЕ СТРАНИЦЫ ===");
+        if (!nonExistingPages.isEmpty()) {
+            System.out.println("Первые 5 страниц (всего " + nonExistingPages.size() + "):");
+            int count = 0;
+            for (String page : nonExistingPages) {
+                if (count++ < 5) {
+                    System.out.println("  - " + page);
+                } else {
+                    break;
+                }
+            }
+            if (nonExistingPages.size() > 5) {
+                System.out.println("  ... и еще " + (nonExistingPages.size() - 5) + " страниц");
+            }
+        } else {
+            System.out.println("Нет страниц с кодом 404");
+        }
+
+        System.out.println("=== СТАТИСТИКА ОПЕРАЦИОННЫХ СИСТЕМ ===");
+        Map<String, Double> osStats = getOsStatistics();
+        if (!osStats.isEmpty()) {
+            System.out.println("Доли использования ОС:");
+            for (Map.Entry<String, Double> entry : osStats.entrySet()) {
+                System.out.printf("  %-10s: %.2f%% (%d запросов)%n", entry.getKey(), entry.getValue() * 100, osCounts.get(entry.getKey()));
+            }
+        }
+
+        System.out.println("\n=== СТАТИСТИКА БРАУЗЕРОВ ===");
+        Map<String, Double> browserStats = getBrowserStatistics();
+        if (!browserStats.isEmpty()) {
+            System.out.println("Доли использования браузеров:");
+            for (Map.Entry<String, Double> entry : browserStats.entrySet()) {
+                System.out.printf("  %-10s: %.2f%% (%d запросов)%n", entry.getKey(), entry.getValue() * 100, browserCounts.get(entry.getKey()));
+            }
+        }
+
+        System.out.println("=".repeat(50));
     }
 }
