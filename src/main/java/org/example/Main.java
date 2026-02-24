@@ -40,36 +40,80 @@ public class Main {
             System.out.println();
 
             try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
-                FileReader fileReader = new FileReader(path);
                 String line;
                 int totalLines = 0;
-                int minLength = Integer.MAX_VALUE;
-                int maxLength = 0;
+                int googleBotCount = 0;
+                int yandexBotCount = 0;
 
                 while ((line = reader.readLine()) != null) {
-                    int length = line.length();
+                    totalLines++;
 
-                    if (length > 1024) {
-                        throw new LineTooLongException("Строка #" + (totalLines + 1) + " превышает 1024 символа. Длина: " + length);
+                    if (line.length() > 1024) {
+                        throw new LineTooLongException("Строка #" + (totalLines) + " превышает 1024 символа. Длина: " + line.length());
                     }
 
-                    totalLines++;
-                    if (length < minLength) minLength = length;
-                    if (length > maxLength) maxLength = length;
+                    String userAgent = extractUserAgent(line);
+                    if (userAgent != null) {
+                        String botName = extractBotNameFromUserAgent(userAgent);
+
+                        if (botName != null) {
+                            if (botName.equalsIgnoreCase("Googlebot") ||
+                                    botName.equalsIgnoreCase("GoogleBot") ||
+                                    botName.equalsIgnoreCase("Google")) {
+                                googleBotCount++;
+                            } else if (botName.equalsIgnoreCase("YandexBot") ||
+                                    botName.equalsIgnoreCase("Yandex")) {
+                                yandexBotCount++;
+                            }
+                        }
+                    }
                 }
-
-                reader.close();
-                fileReader.close();
-
                 System.out.println("Количество строк: " + totalLines);
-                System.out.println("Минимальная длина: " + (minLength == Integer.MAX_VALUE ? 0 : minLength));
-                System.out.println("Максимальная длина: " + maxLength);
+                System.out.println("Запросов от Googlebot: " + googleBotCount + ", их доля составляет " + String.format("%.2f%%", (double) googleBotCount / totalLines * 100));
+                System.out.println("Запросов от YandexBot: " + yandexBotCount + ", их доля составляет " + String.format("%.2f%%", (double) yandexBotCount / totalLines * 100));
 
             } catch (Exception ex) {
+                System.err.println("Непредвиденная ошибка: " + ex.getMessage());
                 ex.printStackTrace();
                 System.exit(1);
             }
         }
+    }
+
+    private static String extractUserAgent(String logLine) {
+
+        int lastQuoteIndex = logLine.lastIndexOf('"');
+        if (lastQuoteIndex == -1) return null;
+
+        int secondLastQuoteIndex = logLine.lastIndexOf('"', lastQuoteIndex - 1);
+        if (secondLastQuoteIndex == -1) return null;
+
+        return logLine.substring(secondLastQuoteIndex + 1, lastQuoteIndex);
+    }
+
+    private static String extractBotNameFromUserAgent(String userAgent) {
+        try {
+            int start = userAgent.indexOf('(');
+            int end = userAgent.indexOf(')', start);
+
+            if (start == -1 || end == -1) {
+                return null;
+            }
+
+            String content = userAgent.substring(start + 1, end);
+            String[] parts = content.split(";");
+
+            if (parts.length >= 2) {
+                String fragment = parts[1].trim();
+                int slashIndex = fragment.indexOf('/');
+                if (slashIndex != -1) {
+                    return fragment.substring(0, slashIndex).trim();
+                }
+                return fragment;
+            }
+        } catch (Exception e) {
+        }
+        return null;
     }
 }
 
