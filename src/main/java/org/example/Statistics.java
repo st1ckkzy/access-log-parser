@@ -16,6 +16,9 @@ public class Statistics {
     private Set<String> nonExistingPages;
     private Map<String, Integer> osCounts;
     private Map<String, Integer> browserCounts;
+    private int realUserVisits;
+    private int errorRequests;
+    private Set<String> uniqueRealUserIps;
 
     public Statistics() {
         this.totalTraffic = 0;
@@ -26,6 +29,9 @@ public class Statistics {
         this.nonExistingPages = new HashSet<>();
         this.osCounts = new HashMap<>();
         this.browserCounts = new HashMap<>();
+        this.realUserVisits = 0;
+        this.errorRequests = 0;
+        this.uniqueRealUserIps = new HashSet<>();
     }
 
     public void addEntry(LogEntry entry) {
@@ -55,6 +61,64 @@ public class Statistics {
 
         String browser = entry.getUserAgent().getBrowser();
         browserCounts.put(browser, browserCounts.getOrDefault(browser, 0) + 1);
+
+        boolean isBot = entry.getUserAgent().isBot();
+        int responseCode = entry.getResponseCode();
+
+        if (responseCode >= 400 && responseCode < 600) {
+            errorRequests++;
+        }
+
+        if (!isBot) {
+            realUserVisits++;
+            uniqueRealUserIps.add(entry.getIpAddress());
+        }
+    }
+
+    public double getAverageVisitsPerHour() {
+        if (minTime == null || maxTime == null || realUserVisits == 0) {
+            return 0.0;
+        }
+
+        long hoursBetween = ChronoUnit.HOURS.between(minTime, maxTime);
+        if (hoursBetween < 1) {
+            hoursBetween = 1;
+        }
+
+        return (double) realUserVisits / hoursBetween;
+    }
+
+    public double getAverageErrorsPerHour() {
+        if (minTime == null || maxTime == null || errorRequests == 0) {
+            return 0.0;
+        }
+
+        long hoursBetween = ChronoUnit.HOURS.between(minTime, maxTime);
+        if (hoursBetween < 1) {
+            hoursBetween = 1;
+        }
+
+        return (double) errorRequests / hoursBetween;
+    }
+
+    public double getAverageVisitsPerUser() {
+        if (uniqueRealUserIps.isEmpty() || realUserVisits == 0) {
+            return 0.0;
+        }
+
+        return (double) realUserVisits / uniqueRealUserIps.size();
+    }
+
+    public int getRealUserVisits() {
+        return realUserVisits;
+    }
+
+    public int getErrorRequests() {
+        return errorRequests;
+    }
+
+    public int getUniqueRealUsersCount() {
+        return uniqueRealUserIps.size();
     }
 
     public Set<String> getExistingPages() {
@@ -167,8 +231,8 @@ public class Statistics {
     }
 
     public void printStatistics() {
-        System.out.println("=== ОСНОВНАЯ СТАТИСТИКА ===");
-        System.out.println("Всего записей: " + entryCount);
+        System.out.printf("Всего записей: %,d%n", entryCount);
+        System.out.printf("Период: %s - %s%n", minTime != null ? minTime : "N/A", maxTime != null ? maxTime : "N/A");
         long unsignedTotal = totalTraffic & 0xFFFFFFFFL;
 
         if (unsignedTotal != totalTraffic) {
@@ -179,68 +243,15 @@ public class Statistics {
         }
 
         if (minTime != null && maxTime != null) {
-            System.out.println("Период: с " + minTime + " по " + maxTime);
             long hours = ChronoUnit.HOURS.between(minTime, maxTime);
-            System.out.println("Продолжительность: " + hours + " часов");
-            System.out.println("Средний трафик в час: " + String.format("%.2f", getTrafficRate()) + " байт/час");
+            System.out.printf("Продолжительность: %d часов%n", hours);
         }
 
-        printResponseCodeStatistics();
-
-        System.out.println("=== СУЩЕСТВУЮЩИЕ СТРАНИЦЫ ===");
-        if (!existingPages.isEmpty()) {
-            System.out.println("Первые 5 страниц (всего " + existingPages.size() + "):");
-            int count = 0;
-            for (String page : existingPages) {
-                if (count++ < 5) {
-                    System.out.println("  - " + page);
-                } else {
-                    break;
-                }
-            }
-            if (existingPages.size() > 5) {
-                System.out.println("  ... и еще " + (existingPages.size() - 5) + " страниц");
-            }
-        } else {
-            System.out.println("Нет страниц с кодом 200");
-        }
-
-        System.out.println("=== НЕСУЩЕСТВУЮЩИЕ СТРАНИЦЫ ===");
-        if (!nonExistingPages.isEmpty()) {
-            System.out.println("Первые 5 страниц (всего " + nonExistingPages.size() + "):");
-            int count = 0;
-            for (String page : nonExistingPages) {
-                if (count++ < 5) {
-                    System.out.println("  - " + page);
-                } else {
-                    break;
-                }
-            }
-            if (nonExistingPages.size() > 5) {
-                System.out.println("  ... и еще " + (nonExistingPages.size() - 5) + " страниц");
-            }
-        } else {
-            System.out.println("Нет страниц с кодом 404");
-        }
-
-        System.out.println("=== СТАТИСТИКА ОПЕРАЦИОННЫХ СИСТЕМ ===");
-        Map<String, Double> osStats = getOsStatistics();
-        if (!osStats.isEmpty()) {
-            System.out.println("Доли использования ОС:");
-            for (Map.Entry<String, Double> entry : osStats.entrySet()) {
-                System.out.printf("  %-10s: %.2f%% (%d запросов)%n", entry.getKey(), entry.getValue() * 100, osCounts.get(entry.getKey()));
-            }
-        }
-
-        System.out.println("\n=== СТАТИСТИКА БРАУЗЕРОВ ===");
-        Map<String, Double> browserStats = getBrowserStatistics();
-        if (!browserStats.isEmpty()) {
-            System.out.println("Доли использования браузеров:");
-            for (Map.Entry<String, Double> entry : browserStats.entrySet()) {
-                System.out.printf("  %-10s: %.2f%% (%d запросов)%n", entry.getKey(), entry.getValue() * 100, browserCounts.get(entry.getKey()));
-            }
-        }
-
-        System.out.println("=".repeat(50));
+        System.out.println("Посещения реальными пользователями (не боты): " + realUserVisits);
+        System.out.println("Уникальных реальных пользователей: " + uniqueRealUserIps.size());
+        System.out.println("Запросы с ошибками (4xx, 5xx): " + errorRequests);
+        System.out.println("\nСреднее количество посещений в час (реальные пользователи): " + String.format("%.2f", getAverageVisitsPerHour()));
+        System.out.println("Среднее количество ошибок в час: " + String.format("%.2f", getAverageErrorsPerHour()));
+        System.out.println("Средняя посещаемость одним пользователем: " + String.format("%.2f", getAverageVisitsPerUser()));
     }
 }
