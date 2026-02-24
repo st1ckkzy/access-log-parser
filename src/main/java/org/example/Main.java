@@ -3,7 +3,9 @@ package org.example;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
+import java.util.Map;
 import java.util.Scanner;
+import java.util.Set;
 
 class LineTooLongException extends RuntimeException {
     public LineTooLongException(String message) {
@@ -51,11 +53,35 @@ public class Main {
                     if (!line.trim().isEmpty()) {
                         LogEntry entry = new LogEntry(line);
                         statistics.addEntry(entry);
-                        ;
                     }
                 }
 
                 statistics.printStatistics();
+
+                Set<String> existingPages = statistics.getExistingPages();
+                System.out.println("\n1. Существующие страницы (всего " + existingPages.size() + "):");
+                int pageCounter = 1;
+                for (String page : existingPages) {
+                    System.out.printf("%3d. %s%n", pageCounter++, page);
+                    if (pageCounter > 5 && existingPages.size() > 5) {
+                        System.out.printf("... и еще %d страниц%n", existingPages.size() - 5);
+                        break;
+                    }
+                }
+
+                Map<String, Double> osStats = statistics.getOsStatistics();
+                System.out.println("\n2. Статистика операционных систем (доли от 0 до 1):");
+                if (!osStats.isEmpty()) {
+                    System.out.println("ОС                Доля      Процент   Запросов");
+
+                    for (Map.Entry<String, Double> entry : osStats.entrySet()) {
+                        String os = entry.getKey();
+                        double proportion = entry.getValue();
+                        int count = statistics.getOsRawStatistics().get(os);
+
+                        System.out.printf("%-16s %.3f     %.1f%%    %d%n", os, proportion, proportion * 100, count);
+                    }
+                }
 
             } catch (Exception ex) {
                 System.err.println("Непредвиденная ошибка: " + ex.getMessage());
@@ -64,23 +90,7 @@ public class Main {
             }
         }
     }
-
-    private static void printFirstEntries(String path, int count) {
-        try (BufferedReader reader = new BufferedReader(new FileReader(path))) {
-            String line;
-            int printed = 0;
-
-            while ((line = reader.readLine()) != null && printed < count) {
-                if (!line.trim().isEmpty()) {
-                    LogEntry entry = new LogEntry(line);
-                    System.out.println((printed + 1) + ". " + entry);
-                    printed++;
-                }
-            }
-        } catch (Exception e) {
-            System.out.println("Не удалось прочитать записи: " + e.getMessage());
-        }
-    }
 }
+
 
 
