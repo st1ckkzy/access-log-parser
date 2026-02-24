@@ -20,30 +20,26 @@ public class Main {
             System.out.print("Введите путь к файлу: ");
             String path = new Scanner(System.in).nextLine();
             File file = new File(path);
-            boolean fileExists = file.exists();
-            boolean isDirectory = file.isDirectory();
 
-            if (!fileExists) {
+            if (!file.exists()) {
                 System.out.println("Указанный путь или файл не существует");
                 System.out.println();
                 continue;
             }
-            if (isDirectory) {
+            if (file.isDirectory()) {
                 System.out.println("Указанный путь ведет к папке, а не к файлу");
                 System.out.println();
                 continue;
             }
 
             fileExistsCounter++;
-            System.out.println("Путь указан верно");
-            System.out.println("Это файл номер " + fileExistsCounter);
-            System.out.println();
+            System.out.println("Путь указан верно. Выполняется чтение файла " + file.getName() + "...");
+
+            Statistics statistics = new Statistics();
 
             try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
                 String line;
                 int totalLines = 0;
-                int googleBotCount = 0;
-                int yandexBotCount = 0;
 
                 while ((line = reader.readLine()) != null) {
                     totalLines++;
@@ -52,25 +48,14 @@ public class Main {
                         throw new LineTooLongException("Строка #" + (totalLines) + " превышает 1024 символа. Длина: " + line.length());
                     }
 
-                    String userAgent = extractUserAgent(line);
-                    if (userAgent != null) {
-                        String botName = extractBotNameFromUserAgent(userAgent);
-
-                        if (botName != null) {
-                            if (botName.equalsIgnoreCase("Googlebot") ||
-                                    botName.equalsIgnoreCase("GoogleBot") ||
-                                    botName.equalsIgnoreCase("Google")) {
-                                googleBotCount++;
-                            } else if (botName.equalsIgnoreCase("YandexBot") ||
-                                    botName.equalsIgnoreCase("Yandex")) {
-                                yandexBotCount++;
-                            }
-                        }
+                    if (!line.trim().isEmpty()) {
+                        LogEntry entry = new LogEntry(line);
+                        statistics.addEntry(entry);
+                        ;
                     }
                 }
-                System.out.println("Количество строк: " + totalLines);
-                System.out.println("Запросов от Googlebot: " + googleBotCount + ", их доля составляет " + String.format("%.2f%%", (double) googleBotCount / totalLines * 100));
-                System.out.println("Запросов от YandexBot: " + yandexBotCount + ", их доля составляет " + String.format("%.2f%%", (double) yandexBotCount / totalLines * 100));
+
+                statistics.printStatistics();
 
             } catch (Exception ex) {
                 System.err.println("Непредвиденная ошибка: " + ex.getMessage());
@@ -80,40 +65,21 @@ public class Main {
         }
     }
 
-    private static String extractUserAgent(String logLine) {
+    private static void printFirstEntries(String path, int count) {
+        try (BufferedReader reader = new BufferedReader(new FileReader(path))) {
+            String line;
+            int printed = 0;
 
-        int lastQuoteIndex = logLine.lastIndexOf('"');
-        if (lastQuoteIndex == -1) return null;
-
-        int secondLastQuoteIndex = logLine.lastIndexOf('"', lastQuoteIndex - 1);
-        if (secondLastQuoteIndex == -1) return null;
-
-        return logLine.substring(secondLastQuoteIndex + 1, lastQuoteIndex);
-    }
-
-    private static String extractBotNameFromUserAgent(String userAgent) {
-        try {
-            int start = userAgent.indexOf('(');
-            int end = userAgent.indexOf(')', start);
-
-            if (start == -1 || end == -1) {
-                return null;
-            }
-
-            String content = userAgent.substring(start + 1, end);
-            String[] parts = content.split(";");
-
-            if (parts.length >= 2) {
-                String fragment = parts[1].trim();
-                int slashIndex = fragment.indexOf('/');
-                if (slashIndex != -1) {
-                    return fragment.substring(0, slashIndex).trim();
+            while ((line = reader.readLine()) != null && printed < count) {
+                if (!line.trim().isEmpty()) {
+                    LogEntry entry = new LogEntry(line);
+                    System.out.println((printed + 1) + ". " + entry);
+                    printed++;
                 }
-                return fragment;
             }
         } catch (Exception e) {
+            System.out.println("Не удалось прочитать записи: " + e.getMessage());
         }
-        return null;
     }
 }
 
