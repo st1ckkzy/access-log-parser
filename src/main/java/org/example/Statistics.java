@@ -6,6 +6,8 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class Statistics {
     private int totalTraffic;
@@ -19,6 +21,9 @@ public class Statistics {
     private int realUserVisits;
     private int errorRequests;
     private Set<String> uniqueRealUserIps;
+    private Map<Long, Integer> visitsPerSecond;
+    private Set<String> refererDomains;
+    private Map<String, Integer> visitsPerUser;
 
     public Statistics() {
         this.totalTraffic = 0;
@@ -32,6 +37,9 @@ public class Statistics {
         this.realUserVisits = 0;
         this.errorRequests = 0;
         this.uniqueRealUserIps = new HashSet<>();
+        this.visitsPerSecond = new HashMap<>();
+        this.refererDomains = new HashSet<>();
+        this.visitsPerUser = new HashMap<>();
     }
 
     public void addEntry(LogEntry entry) {
@@ -72,7 +80,99 @@ public class Statistics {
         if (!isBot) {
             realUserVisits++;
             uniqueRealUserIps.add(entry.getIpAddress());
+
+            long secondTimestamp = entryTime.toEpochSecond(java.time.ZoneOffset.UTC);
+            visitsPerSecond.put(secondTimestamp, visitsPerSecond.getOrDefault(secondTimestamp, 0) + 1);
+            String ip = entry.getIpAddress();
+            visitsPerUser.put(ip, visitsPerUser.getOrDefault(ip, 0) + 1);
         }
+
+        String referer = entry.getReferer();
+        if (referer != null && !referer.isEmpty() && !referer.equals("-")) {
+            String domain = extractDomain(referer);
+            if (domain != null && !domain.isEmpty()) {
+                refererDomains.add(domain);
+            }
+        }
+    }
+
+    private String extractDomain(String url) {
+        if (url == null || url.isEmpty() || url.equals("-")) {
+            return null;
+        }
+
+        try {
+            Pattern pattern = Pattern.compile("^(https?://)?([^/?#]+)");
+            Matcher matcher = pattern.matcher(url);
+
+            if (matcher.find()) {
+                String fullHost = matcher.group(2);
+
+                if (fullHost.startsWith("www.")) {
+                    fullHost = fullHost.substring(4);
+                }
+
+                int portIndex = fullHost.indexOf(':');
+                if (portIndex > 0) {
+                    fullHost = fullHost.substring(0, portIndex);
+                }
+
+                return fullHost;
+            }
+        } catch (Exception e) {
+
+        }
+        return null;
+    }
+
+    public int getPeakVisitsPerSecond() {
+        if (visitsPerSecond.isEmpty()) {
+            return 0;
+        }
+
+        return visitsPerSecond.values().stream().mapToInt(Integer::intValue).max().orElse(0);
+    }
+
+    public LocalDateTime getPeakVisitsTime() {
+        if (visitsPerSecond.isEmpty()) {
+            return null;
+        }
+
+        long peakSecond = visitsPerSecond.entrySet().stream().max(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse(0L);
+
+        return LocalDateTime.ofEpochSecond(peakSecond, 0, java.time.ZoneOffset.UTC);
+    }
+
+    public Set<String> getRefererDomains() {
+        return new HashSet<>(refererDomains);
+    }
+
+    public int getRefererDomainsCount() {
+        return refererDomains.size();
+    }
+
+    public int getMaxVisitsPerUser() {
+        if (visitsPerUser.isEmpty()) {
+            return 0;
+        }
+
+        return visitsPerUser.values().stream().mapToInt(Integer::intValue).max().orElse(0);
+    }
+
+    public String getMostActiveUserIP() {
+        if (visitsPerUser.isEmpty()) {
+            return null;
+        }
+
+        return visitsPerUser.entrySet().stream().max(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse(null);
+    }
+
+    public Map<Long, Integer> getVisitsPerSecond() {
+        return new HashMap<>(visitsPerSecond);
+    }
+
+    public Map<String, Integer> getVisitsPerUser() {
+        return new HashMap<>(visitsPerUser);
     }
 
     public double getAverageVisitsPerHour() {
@@ -226,7 +326,6 @@ public class Statistics {
     public void printResponseCodeStatistics() {
         System.out.println("Существующие страницы (200): " + getExistingPagesCount());
         System.out.println("Несуществующие страницы (404): " + getNonExistingPagesCount());
-
         System.out.println("Всего уникальных страниц в логах: " + (existingPages.size() + nonExistingPages.size()));
     }
 
@@ -236,7 +335,6 @@ public class Statistics {
         long unsignedTotal = totalTraffic & 0xFFFFFFFFL;
 
         if (unsignedTotal != totalTraffic) {
-//            System.out.println("Произошло переполнение int. Отображаемое значение: " + totalTraffic + " байт"); //По условиям задачи totalTraffic обязательно должен быть int. Для корректного подсчета используем long unsignedTotal
             System.out.println("Общий трафик: " + unsignedTotal + " байт");
         } else {
             System.out.println("Общий трафик: " + totalTraffic + " байт");
@@ -250,8 +348,38 @@ public class Statistics {
         System.out.println("Посещения реальными пользователями (не боты): " + realUserVisits);
         System.out.println("Уникальных реальных пользователей: " + uniqueRealUserIps.size());
         System.out.println("Запросы с ошибками (4xx, 5xx): " + errorRequests);
-        System.out.println("\nСреднее количество посещений в час (реальные пользователи): " + String.format("%.2f", getAverageVisitsPerHour()));
+        System.out.println("Среднее количество посещений в час (реальные пользователи): " + String.format("%.2f", getAverageVisitsPerHour()));
         System.out.println("Среднее количество ошибок в час: " + String.format("%.2f", getAverageErrorsPerHour()));
         System.out.println("Средняя посещаемость одним пользователем: " + String.format("%.2f", getAverageVisitsPerUser()));
+
+        int peakVisits = getPeakVisitsPerSecond();
+        LocalDateTime peakTime = getPeakVisitsTime();
+        System.out.printf("\nПиковая посещаемость: %d посещений/секунду", peakVisits);
+        if (peakTime != null) {
+            System.out.printf(" (достигнута %s)", peakTime);
+        }
+        System.out.println();
+
+        Set<String> domains = getRefererDomains();
+        System.out.printf("Сайтов-источников трафика (Referer): %,d%n", domains.size());
+        if (!domains.isEmpty()) {
+            System.out.println("Список сайтов (первые 5):");
+            int count = 0;
+            for (String domain : domains) {
+                System.out.printf("  %d. %s%n", ++count, domain);
+                if (count >= 5) {
+                    System.out.println("  ... и еще " + (domains.size() - 5));
+                    break;
+                }
+            }
+        }
+
+        int maxUserVisits = getMaxVisitsPerUser();
+        String mostActiveIP = getMostActiveUserIP();
+        System.out.printf("Максимальная посещаемость одним пользователем: %d запросов", maxUserVisits);
+        if (mostActiveIP != null) {
+            System.out.printf(" (IP: %s)", mostActiveIP);
+        }
+        System.out.println();
     }
 }
